@@ -1,6 +1,6 @@
 # Grand Central Dispatch
 
-这篇文主要想总结下 `GCD` 在swift中的使用，[文中示例代码](https://github.com/FelixScat/demo_GCD)
+这篇文主要想总结下 `GCD` 在`ObjC`中的使用，[文中示例代码](https://github.com/FelixScat/demo_GCD)
 
 ## 基本概念
 
@@ -43,58 +43,75 @@
 
 ```sh
 git clone https://github.com/FelixScat/demo_GCD.git
-cd swiftGCD
-swift package generate-xcodeproj
+cd ObjCGCD
 xed ./
 ```
 
-打开`main.swift`先声明两个事件
+打开`main.m`先声明两个事件
 
-```swift
-/// 烧水
-let boiledWater = {
-    print("开始烧水: \(Thread.current)")
-    sleep(3)
-    print("水烧好啦")
+```objc
+int main(int argc, const char * argv[]) {
+    @autoreleasepool {
+        // insert code here...
+        
+        // 烧水
+        void (^boiledWater)(void) = ^(void){
+            NSLog(@"开始烧水：%@", [NSThread currentThread]);
+            sleep(3);
+            NSLog(@"水烧好啦");
+        };
+        
+        // 刷牙
+        void (^brushTeeth)(void) = ^(void){
+            NSLog(@"开始刷牙：%@", [NSThread currentThread]);
+            sleep(5);
+            NSLog(@"牙刷完啦");
+        };
+        
+        NSLog(@"Enter (q) to quit\n");
+        char input[100];
+        while (scanf("%[^\n]%*c", input)) {
+            NSString *str = [NSString stringWithCString:input encoding:NSUTF8StringEncoding];
+            if ([str isEqualToString:@"q"]) {
+                exit(0);
+            }
+        }
+    }
+    return 0;
 }
 
-/// 刷牙
-let brushTeeth = {
-    print("开始刷牙:\(Thread.current)")
-    sleep(5)
-    print("牙刷完啦")
-}
 ```
 
 ### 队列
 
 #### 先声明两个队列
 
-```swift
-/// 串行队列
-let serialQueue = DispatchQueue(label: "top.felixplus.k.serial")
-/// 并行队列
-let concurrentQueue = DispatchQueue(label: "top.felixplus.k.concurrent", attributes: .concurrent)
+```objc
+// 串行队列
+dispatch_queue_t serialQueue = dispatch_queue_create("top.felixplus.k.serial", 0);
+// 并行队列
+dispatch_queue_t concurrentQueue = dispatch_queue_create("top.felixplus.k.concurrent", DISPATCH_QUEUE_CONCURRENT);
 ```
 
 其中串行队列就表示队列中的人物会依次执行，而并行队列中的人物将会同时并发执行
 
 ### 同步任务
 
-```swift
-DispatchQueue.global().sync {
-    boiledWater()
-    brushTeeth()
-}
+```objc
+dispatch_sync(serialQueue, ^{
+  boiledWater();
+  brushTeeth();
+});
 ```
 
 串行就会一个任务接着一个任务执行，最终输入如下
 
 ```
-开始烧水: <NSThread: 0x100603730>{number = 1, name = main}
-水烧好啦
-开始刷牙:<NSThread: 0x100603730>{number = 1, name = main}
-牙刷完啦
+2019-08-26 15:04:54.199599+0800 ObjCGCD[10282:1329591] 开始烧水：<NSThread: 0x100503ba0>{number = 1, name = main}
+2019-08-26 15:04:57.204298+0800 ObjCGCD[10282:1329591] 水烧好啦
+2019-08-26 15:04:57.204523+0800 ObjCGCD[10282:1329591] 开始刷牙：<NSThread: 0x100503ba0>{number = 1, name = main}
+2019-08-26 15:05:02.204803+0800 ObjCGCD[10282:1329591] 牙刷完啦
+2019-08-26 15:05:02.204866+0800 ObjCGCD[10282:1329591] Enter (q) to quit
 ```
 
 使用sync是没有开辟新线程的能力的，同时，同步任务执行的线程必然为sync代码执行上下文的线程
@@ -103,80 +120,27 @@ DispatchQueue.global().sync {
 
 ### 异步任务
 
-```swift
-DispatchQueue.global().async(execute: boiledWater)
-DispatchQueue.global().async(execute: brushTeeth)
+```objc
+dispatch_async(dispatch_get_global_queue(0, 0), boiledWater);
+dispatch_async(dispatch_get_global_queue(0, 0), brushTeeth);
 ```
 
 并行任务几乎会同时开始，同时进行，下面是输出
 
 ```
-开始刷牙:<NSThread: 0x100700000>{number = 2, name = (null)}
-开始烧水: <NSThread: 0x102805500>{number = 3, name = (null)}
-水烧好啦
-牙刷完啦
+2019-08-26 15:06:52.401411+0800 ObjCGCD[12001:1337448] Enter (q) to quit
+2019-08-26 15:06:52.401708+0800 ObjCGCD[12001:1337471] 开始烧水：<NSThread: 0x1030280f0>{number = 2, name = (null)}
+2019-08-26 15:06:52.401720+0800 ObjCGCD[12001:1337472] 开始刷牙：<NSThread: 0x100503fa0>{number = 3, name = (null)}
+2019-08-26 15:06:55.403434+0800 ObjCGCD[12001:1337471] 水烧好啦
+2019-08-26 15:06:57.402995+0800 ObjCGCD[12001:1337472] 牙刷完啦
 ```
 
 异步任务也不一定就一定会开启新的线程，具体的操作会由GCD内部负责处理，可以尝试以下测试代码
 
-```swift
-(1...1000).forEach { (i) in
-    DispatchQueue.global().async(execute: boiledWater)
-    DispatchQueue.global().async(execute: brushTeeth)
+```objc
+for (int i = 0; i < 1000; i++) {
+	dispatch_async(dispatch_get_global_queue(0, 0), boiledWater);
 }
-```
-
-### DispatchWorkItem
-
-上面的两个任务其本质就是两个函数，不过在GCD中还有更加方便的写法
-
-```swift
-/// 烧水
-let boiledWater = DispatchWorkItem{
-    print("开始烧水: \(Thread.current)")
-    sleep(3)
-    print("水烧好啦")
-}
-
-/// 刷牙
-let brushTeeth = DispatchWorkItem{
-    print("开始刷牙:\(Thread.current)")
-    sleep(5)
-    print("牙刷完啦")
-}
-```
-
-我们依然可以用之前的调用方式来执行任务
-
-```swift
-DispatchQueue.global().async(execute: boiledWater)
-DispatchQueue.global().async(execute: brushTeeth)
-```
-
-除此之外还可以这样执行任务
-
-```
-boiledWater.perform()
-brushTeeth.perform()
-```
-
-这就相当于使用`sync`方法在当前的thread同步添加任务
-
-还能够取消任务
-
-```
-DispatchQueue.global().async {
-    boiledWater.perform()
-    brushTeeth.perform()
-}
-boiledWater.cancel()
-```
-
-输出如下
-
-```
-开始刷牙:<NSThread: 0x100600240>{number = 2, name = (null)}
-牙刷完啦
 ```
 
 ### 优先级QOS
@@ -188,19 +152,20 @@ boiledWater.cancel()
 - Utility： 可以执行很长时间，再通知用户结果。比如下载一个文件，给用户下载进度。
 - Background： 用户不可见，比如在后台存储大量数据
 
-```swift
-/// 串行队列
-let serialQueue = DispatchQueue(label: "top.felixplus.k.serial", qos: .default)
-/// 并行队列
-let concurrentQueue = DispatchQueue(label: "top.felixplus.k.concurrent", qos: .default, attributes: .concurrent)
+```objc
+dispatch_queue_attr_t serial_attr = dispatch_queue_attr_make_with_qos_class (DISPATCH_QUEUE_SERIAL, QOS_CLASS_DEFAULT,-1);
+        dispatch_queue_attr_t concurrent_attr = dispatch_queue_attr_make_with_qos_class (DISPATCH_QUEUE_CONCURRENT, QOS_CLASS_DEFAULT,-1);
+        
+// 串行队列
+dispatch_queue_t serialQueue = dispatch_queue_create("top.felixplus.k.serial", serial_attr);
+// 并行队列
+dispatch_queue_t concurrentQueue = dispatch_queue_create("top.felixplus.k.concurrent", concurrent_attr);
 ```
 
 ### 死锁
 
-```swift
-DispatchQueue.main.sync {
-    boiledWater.perform()
-}
+```objc
+dispatch_sync(dispatch_get_main_queue(), boiledWater);
 ```
 
 这段代码一定会造成死锁，那么产生的原因是什么呢
@@ -209,10 +174,8 @@ DispatchQueue.main.sync {
 
 解决方法有很多，根据上述我们所说的队列问题，其实很简单，我们使用自己新建的队列执行就可以避免
 
-```swift
-serialQueue.sync {
-    boiledWater.perform()
-}
+```objc
+dispatch_sync(serialQueue, boiledWater);
 ```
 
 这样代码依然会在mainthread执行，并且不会导致主队列的阻塞
@@ -223,90 +186,86 @@ serialQueue.sync {
 
 举个例子，通过信号量我们可以限制一个并行队列中同时运行的任务数量
 
-```swift
-let signal =  DispatchSemaphore(value: 2)
+```objc
+dispatch_semaphore_t signal = dispatch_semaphore_create(2);
 
-signal.wait()
-DispatchQueue.global().async {
-    boiledWater.perform()
-    signal.signal()
-}
+dispatch_semaphore_wait(signal, DISPATCH_TIME_FOREVER);
+dispatch_async(dispatch_get_global_queue(0, 0), ^{
+  boiledWater();
+  dispatch_semaphore_signal(signal);
+});
 
-signal.wait()
-DispatchQueue.global().async {
-    brushTeeth.perform()
-    signal.signal()
-}
+dispatch_semaphore_wait(signal, DISPATCH_TIME_FOREVER);
+dispatch_async(dispatch_get_global_queue(0, 0), ^{
+  brushTeeth();
+  dispatch_semaphore_signal(signal);
+});
 
-signal.wait()
-DispatchQueue.global().async {
-    boiledWater.perform()
-    signal.signal()
-}
+dispatch_semaphore_wait(signal, DISPATCH_TIME_FOREVER);
+dispatch_async(dispatch_get_global_queue(0, 0), ^{
+  boiledWater();
+  dispatch_semaphore_signal(signal);
+});
 
-signal.wait()
-DispatchQueue.global().async {
-    brushTeeth.perform()
-    signal.signal()
-}
+dispatch_semaphore_wait(signal, DISPATCH_TIME_FOREVER);
+dispatch_async(dispatch_get_global_queue(0, 0), ^{
+  brushTeeth();
+  dispatch_semaphore_signal(signal);
+});
+
 ```
 
 再举个例子，我们可以将一些异步的任务转为同步执行（水烧好再刷牙）
 
-```swift
-let signal =  DispatchSemaphore(value: 0)
-concurrentQueue.async {
-    boiledWater.perform()
-    signal.signal()
-}
+```objc
+dispatch_semaphore_t signal = dispatch_semaphore_create(0);
 
-signal.wait()
+dispatch_async(concurrentQueue, ^{
+  boiledWater();
+  dispatch_semaphore_signal(signal);
+});
 
-concurrentQueue.async {
-    brushTeeth.perform()
-}
+dispatch_semaphore_wait(signal, DISPATCH_TIME_FOREVER);
+
+dispatch_async(concurrentQueue, ^{
+  brushTeeth();
+});
+
 ```
 
 ### Group
 
 任务组可以用来管理任意的任务，不管他们是来自相同队列还是不同队列，下面是使用
 
-```swift
-let group = DispatchGroup()
+```objc
+dispatch_group_t group = dispatch_group_create();
 
-concurrentQueue.async(group: group, execute: boiledWater)
-concurrentQueue.async(group: group, execute: brushTeeth)
-```
+dispatch_group_enter(group);
+dispatch_async(concurrentQueue, ^{
+  boiledWater();
+  dispatch_group_leave(group);
+});
 
-也可以使用group的enter和leave方法
-
-```swift
-group.enter()
-concurrentQueue.async {
-    boiledWater.perform()
-    group.leave()
-}
-
-group.enter()
-serialQueue.sync {
-    brushTeeth.perform()
-    group.leave()
-}
+dispatch_group_enter(group);
+dispatch_sync(serialQueue, ^{
+  brushTeeth();
+  dispatch_group_leave(group);
+});
 ```
 
 在任务完成时发出通知
 
-```swift
-group.notify(queue: concurrentQueue) {
-    print("All done")
-}
+```objc
+dispatch_group_notify(group, concurrentQueue, ^{
+  NSLog(@"All done");
+});
 ```
 
 阻塞当前线程直到任务全部完成
 
-```swift
-group.wait()
-print("All done")
+```objc
+dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+NSLog(@"All done");
 ```
 
 ### 栅栏方法
@@ -316,23 +275,9 @@ print("All done")
 - 执行当前任务需要队列中前面全部的任务执行完毕
 - 需要当前任务执行完毕才会执行后面的函数
 
-```swift
-/// 烧水
-let boiledWaterWithBarrier = DispatchWorkItem(qos: .default, flags: .barrier) {
-    print("开始烧水: \(Thread.current)")
-    sleep(3)
-    print("水烧好啦")
-}
-
-/// 刷牙
-let brushTeethWithBarrier = DispatchWorkItem(qos: .default, flags: .barrier) {
-    print("开始刷牙:\(Thread.current)")
-    sleep(5)
-    print("牙刷完啦")
-}
-
-concurrentQueue.async(execute: boiledWaterWithBarrier)
-concurrentQueue.async(execute: brushTeethWithBarrier)
+```objc
+dispatch_barrier_async(concurrentQueue, boiledWater);
+dispatch_barrier_async(concurrentQueue, brushTeeth);
 ```
 
 ### 迭代
@@ -343,25 +288,28 @@ DispatchQueue为我们提供了一种更加方便的方法来同时执行多个�
 
 比如我们要找到0到100000中所有能被17整除的数字：
 
-```swift
-let list = Array(0...100000)
-var result = [Int]()
-
-
-concurrentQueue.async {
-    
-    
-    DispatchQueue.concurrentPerform(iterations: list.count) { (i) in
-        if (i % 17 == 0) {
-            serialQueue.sync {
-                result.append(list[i])
-            }
-        }
-    }
-    serialQueue.sync(execute: {
-        print(result)
-    })
+```objc
+NSMutableArray *list = [NSMutableArray arrayWithCapacity:100001];
+NSMutableArray *result = [NSMutableArray arrayWithCapacity:500];
+for (int i = 0; i < 100000; i++) {
+  [list addObject:@(i)];
 }
+
+dispatch_async(concurrentQueue, ^{
+
+  dispatch_apply(list.count, concurrentQueue, ^(size_t i) {
+    if (i % 17 == 0) {
+      dispatch_sync(serialQueue, ^{
+        [result addObject:list[i]];
+      });
+    }
+  });
+
+  dispatch_sync(serialQueue, ^{
+    NSLog(@"%@", result);
+  });
+});
+
 ```
 
 
