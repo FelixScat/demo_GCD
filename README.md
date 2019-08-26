@@ -50,7 +50,7 @@ xed ./
 
 打开`main.swift`先声明两个事件
 
-```
+```swift
 /// 烧水
 let boiledWater = {
     print("开始烧水: \(Thread.current)")
@@ -66,266 +66,320 @@ let brushTeeth = {
 }
 ```
 
-### 串行
+### 队列
 
-
-
-
-
-## 参考
-
-[https://stackoverflow.com/questions/23856230/what-is-the-difference-between-gcd-main-queue-and-the-main-thread](https://stackoverflow.com/questions/23856230/what-is-the-difference-between-gcd-main-queue-and-the-main-thread)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-### 如何使用
+#### 先声明两个队列
 
 ```swift
+/// 串行队列
+let serialQueue = DispatchQueue(label: "top.felixplus.k.serial")
+/// 并行队列
+let concurrentQueue = DispatchQueue(label: "top.felixplus.k.concurrent", attributes: .concurrent)
+```
+
+其中串行队列就表示队列中的人物会依次执行，而并行队列中的人物将会同时并发执行
+
+### 同步任务
+
+```swift
+DispatchQueue.global().sync {
+    boiledWater()
+    brushTeeth()
+}
+```
+
+串行就会一个任务接着一个任务执行，最终输入如下
+
+```
+开始烧水: <NSThread: 0x100603730>{number = 1, name = main}
+水烧好啦
+开始刷牙:<NSThread: 0x100603730>{number = 1, name = main}
+牙刷完啦
+```
+
+使用sync是没有开辟新线程的能力的，同时，同步任务执行的线程必然为sync代码执行上下文的线程
+
+可以看到log中的输出是在mainthread。
+
+### 异步任务
+
+```swift
+DispatchQueue.global().async(execute: boiledWater)
+DispatchQueue.global().async(execute: brushTeeth)
+```
+
+并行任务几乎会同时开始，同时进行，下面是输出
+
+```
+开始刷牙:<NSThread: 0x100700000>{number = 2, name = (null)}
+开始烧水: <NSThread: 0x102805500>{number = 3, name = (null)}
+水烧好啦
+牙刷完啦
+```
+
+异步任务也不一定就一定会开启新的线程，具体的操作会由GCD内部负责处理，可以尝试以下测试代码
+
+```swift
+(1...1000).forEach { (i) in
+    DispatchQueue.global().async(execute: boiledWater)
+    DispatchQueue.global().async(execute: brushTeeth)
+}
+```
+
+### DispatchWorkItem
+
+上面的两个任务其本质就是两个函数，不过在GCD中还有更加方便的写法
+
+```swift
+/// 烧水
+let boiledWater = DispatchWorkItem{
+    print("开始烧水: \(Thread.current)")
+    sleep(3)
+    print("水烧好啦")
+}
+
+/// 刷牙
+let brushTeeth = DispatchWorkItem{
+    print("开始刷牙:\(Thread.current)")
+    sleep(5)
+    print("牙刷完啦")
+}
+```
+
+我们依然可以用之前的调用方式来执行任务
+
+```swift
+DispatchQueue.global().async(execute: boiledWater)
+DispatchQueue.global().async(execute: brushTeeth)
+```
+
+除此之外还可以这样执行任务
+
+```
+boiledWater.perform()
+brushTeeth.perform()
+```
+
+这就相当于使用`sync`方法在当前的thread同步添加任务
+
+还能够取消任务
+
+```
 DispatchQueue.global().async {
-
-    print("do something in global \(Thread.current)")
-
-    DispatchQueue.main.async {
-
-        print("do something in main \(Thread.current)")
-    }
+    boiledWater.perform()
+    brushTeeth.perform()
 }
+boiledWater.cancel()
 ```
 
-这里使用了全局的队列执行一些任务 ， 然后切回主队列 , 这里要注意主队列是运行在主线程上的任务堆栈 。
+输出如下
 
-### 自定义队列
-
-除了使用全局队列外我们还可以使用自定义的队列
-
-```swift
-let q = DispatchQueue(label: "com.felix.felix")
+```
+开始刷牙:<NSThread: 0x100600240>{number = 2, name = (null)}
+牙刷完啦
 ```
 
-初始化一个队列最简单的方式就是声明它的标签 。
+### 优先级QOS
 
-### async
-
-打开Xcode,新建一个commandLineTool工程、
-打开main.swift
-
-```swift
-let q = DispatchQueue(label: "com.felix.felix")
-
-q.sync {
-    (1...5).forEach({ i in
-        print("🍎 \(Thread.current) + \(i)")
-    })
-}
-q.async {
-    (6...10).forEach({ i in
-        print("🍇 \(Thread.current) + \(i)")
-    })
-}
-(11...15).forEach({ i in
-    print("🍌 \(Thread.current) + \(i)")
-})
-```
-
-先声明一个队列,使用sync添加一个同步的任务输出1到5,使用async异步输出6到10,同时在主线程打印11到15 。
-
-按下command+R运行project,
-
-```swift
-🍎 <NSThread: 0x103103480>{number = 1, name = main} + 1
-🍎 <NSThread: 0x103103480>{number = 1, name = main} + 2
-🍎 <NSThread: 0x103103480>{number = 1, name = main} + 3
-🍎 <NSThread: 0x103103480>{number = 1, name = main} + 4
-🍎 <NSThread: 0x103103480>{number = 1, name = main} + 5
-🍌 <NSThread: 0x103103480>{number = 1, name = main} + 11
-🍇 <NSThread: 0x103007940>{number = 2, name = (null)} + 6
-🍌 <NSThread: 0x103103480>{number = 1, name = main} + 12
-🍇 <NSThread: 0x103007940>{number = 2, name = (null)} + 7
-🍌 <NSThread: 0x103103480>{number = 1, name = main} + 13
-🍇 <NSThread: 0x103007940>{number = 2, name = (null)} + 8
-🍌 <NSThread: 0x103103480>{number = 1, name = main} + 14
-🍇 <NSThread: 0x103007940>{number = 2, name = (null)} + 9
-🍌 <NSThread: 0x103103480>{number = 1, name = main} + 15
-🍇 <NSThread: 0x103007940>{number = 2, name = (null)} + 10
-Program ended with exit code: 0
-```
-
-我们可以看到,🍎代表的任务全部是优先执行的,这说明sync添加的任务会阻塞当前线程,在看到🍌和🍇是均匀分部的,这是由于async添加的任务会默认加入由系统管理的线程池,异步执行 。
-
-### 优先级 QoS
-
-当多个队列同时执行的时候,系统需要知道哪个队列优先级更高,才能优先安排计算资源给他,我们可以这样定义优先级：
-
-```swift
-let q = DispatchQueue(label: "com.felix.felix", qos: DispatchQoS.background)
-```
-
-初始化的时候加上qos参数 ， qos（quality of service）从字面上理解就是「服务质量」，在swift中是这样定义的：
-
-```swift
-public enum QoSClass {
-
-        @available(OSX 10.10, iOS 8.0, *)
-        case background
-
-        @available(OSX 10.10, iOS 8.0, *)
-        case utility
-
-        @available(OSX 10.10, iOS 8.0, *)
-        case `default`
-
-        @available(OSX 10.10, iOS 8.0, *)
-        case userInitiated
-
-        @available(OSX 10.10, iOS 8.0, *)
-        case userInteractive
-
-        case unspecified
-
-        @available(OSX 10.10, iOS 8.0, *)
-        public init?(rawValue: qos_class_t)
-
-        @available(OSX 10.10, iOS 8.0, *)
-        public var rawValue: qos_class_t { get }
-    }
-```
+队列在执行的时候有优先级的区别，更高的优先级会得到更优先调用顺序
 
 - User Interactive： 和用户交互相关，比如动画等等优先级最高。比如用户连续拖拽的计算
 - User Initiated： 需要立刻的结果，比如push一个ViewController之前的数据计算
 - Utility： 可以执行很长时间，再通知用户结果。比如下载一个文件，给用户下载进度。
 - Background： 用户不可见，比如在后台存储大量数据
 
-在选择优先级时可以参考如下判断 。
+```swift
+/// 串行队列
+let serialQueue = DispatchQueue(label: "top.felixplus.k.serial", qos: .default)
+/// 并行队列
+let concurrentQueue = DispatchQueue(label: "top.felixplus.k.concurrent", qos: .default, attributes: .concurrent)
+```
 
-- 这个任务是用户可见的吗？
-- 这个任务和用户交互有关吗？
-- 这个任务的执行时间有多少？
-- 这个任务的最终结果和UI有关系吗？
-
-## 并发队列
-
-默认情况下添加进Queue的任务会串行执行 ， 先执行完一个再执行下一个：
+### 死锁
 
 ```swift
-import Foundation
-
-let q = DispatchQueue(label: "com.felix.felix")
-
-q.async {
-    (1...5).forEach({ i in
-        print("🍎 \(Thread.current) + \(i)")
-    })
+DispatchQueue.main.sync {
+    boiledWater.perform()
 }
-q.async {
-    (6...10).forEach({ i in
-        print("🍇 \(Thread.current) + \(i)")
-    })
+```
+
+这段代码一定会造成死锁，那么产生的原因是什么呢
+
+可以先把上面这一整段代码想象成一个任务块(block)，当前是主队列，主队列是串行队列，主队列只有当前的block执行完毕才会执行下一个，上面代码中在一个还没有结束的block中增加了一个任务，并且要阻塞当前的队列优先去执行，所以最终导致了队列阻塞，记住一点，类似上述代码导致死锁的原因并不是线程阻塞，而是队列阻塞
+
+解决方法有很多，根据上述我们所说的队列问题，其实很简单，我们使用自己新建的队列执行就可以避免
+
+```swift
+serialQueue.sync {
+    boiledWater.perform()
 }
-(11...15).forEach({ i in
-    print("🍌 \(Thread.current) + \(i)")
-})
 ```
 
-运行看下日志输出
+这样代码依然会在mainthread执行，并且不会导致主队列的阻塞
+
+### 信号量
+
+信号量可以在很多场景下使用，初始化信号量需要一个数值，信号量通过wait来将这个数值减1，通过signal方法来将这个数值加1，当信号量的值小于0的时候将会一直等待
+
+举个例子，通过信号量我们可以限制一个并行队列中同时运行的任务数量
 
 ```swift
-🍎 <NSThread: 0x102a081a0>{number = 2, name = (null)} + 1
-🍌 <NSThread: 0x100f046f0>{number = 1, name = main} + 11
-🍎 <NSThread: 0x102a081a0>{number = 2, name = (null)} + 2
-🍌 <NSThread: 0x100f046f0>{number = 1, name = main} + 12
-🍎 <NSThread: 0x102a081a0>{number = 2, name = (null)} + 3
-🍌 <NSThread: 0x100f046f0>{number = 1, name = main} + 13
-🍎 <NSThread: 0x102a081a0>{number = 2, name = (null)} + 4
-🍌 <NSThread: 0x100f046f0>{number = 1, name = main} + 14
-🍎 <NSThread: 0x102a081a0>{number = 2, name = (null)} + 5
-🍌 <NSThread: 0x100f046f0>{number = 1, name = main} + 15
-🍇 <NSThread: 0x102a081a0>{number = 2, name = (null)} + 6
-🍇 <NSThread: 0x102a081a0>{number = 2, name = (null)} + 7
-🍇 <NSThread: 0x102a081a0>{number = 2, name = (null)} + 8
-🍇 <NSThread: 0x102a081a0>{number = 2, name = (null)} + 9
-Program ended with exit code: 0
+let signal =  DispatchSemaphore(value: 2)
+
+signal.wait()
+DispatchQueue.global().async {
+    boiledWater.perform()
+    signal.signal()
+}
+
+signal.wait()
+DispatchQueue.global().async {
+    brushTeeth.perform()
+    signal.signal()
+}
+
+signal.wait()
+DispatchQueue.global().async {
+    boiledWater.perform()
+    signal.signal()
+}
+
+signal.wait()
+DispatchQueue.global().async {
+    brushTeeth.perform()
+    signal.signal()
+}
 ```
 
-我们可以看到直到🍎都输出完毕才会输出🍇,有时候我们想把任务并行执行,怎么办呢。
-可以设置queue的Attributes。
+再举个例子，我们可以将一些异步的任务转为同步执行（水烧好再刷牙）
 
 ```swift
-let q = DispatchQueue(label: "com.felix.felix", attributes: DispatchQueue.Attributes.concurrent)
+let signal =  DispatchSemaphore(value: 0)
+concurrentQueue.async {
+    boiledWater.perform()
+    signal.signal()
+}
+
+signal.wait()
+
+concurrentQueue.async {
+    brushTeeth.perform()
+}
 ```
 
-再运行下看看会怎样。
+### Group
 
-### DispatchWorkItem
-
-有的时候,对于同一个操作我们有可能会放在不同的线程中去执行,这样我们就可以把这个操作用DispatchWorkItem的形式包裹起来,在不同的线程中执行 。
+任务组可以用来管理任意的任务，不管他们是来自相同队列还是不同队列，下面是使用
 
 ```swift
-import Foundation
-
 let group = DispatchGroup()
 
-let q = DispatchQueue(label: "com.felix.felix", attributes: DispatchQueue.Attributes.concurrent)
-
-let item1 = DispatchWorkItem {
-    (1...5).forEach({ i in
-        print("🍎 \(Thread.current) + \(i)")
-    })
-}
-
-let item2 = DispatchWorkItem {
-    (6...10).forEach({ i in
-        print("🍇 \(Thread.current) + \(i)")
-    })
-}
-
-
-q.async(execute: item1)
-
-q.async(execute: item2)
-
-(11...15).forEach({ i in
-    print("🍌 \(Thread.current) + \(i)")
-})
+concurrentQueue.async(group: group, execute: boiledWater)
+concurrentQueue.async(group: group, execute: brushTeeth)
 ```
 
-### Group 队列组
+也可以使用group的enter和leave方法
 
-DispatchGroup 可以用来管理一组队列,监听所有队列的所有任务都完成的通知,比较常用的就是在一个页面请求多个接口的时候,全部请求完再刷新UI 。
+```swift
+group.enter()
+concurrentQueue.async {
+    boiledWater.perform()
+    group.leave()
+}
 
-pass
+group.enter()
+serialQueue.sync {
+    brushTeeth.perform()
+    group.leave()
+}
+```
 
-### 延时执行
+在任务完成时发出通知
 
-pass
+```swift
+group.notify(queue: concurrentQueue) {
+    print("All done")
+}
+```
 
-### 线程安全
+阻塞当前线程直到任务全部完成
 
-pass
+```swift
+group.wait()
+print("All done")
+```
 
-### 总结
+### 栅栏方法
 
-总之,使用GCD一方面会提升我们应用的性能,给用户带来更好的体验,不过一定要注意线程安全问题。
+栅栏方法顾名思义，会把当前的任务前后加上**围栏** 
+
+- 执行当前任务需要队列中前面全部的任务执行完毕
+- 需要当前任务执行完毕才会执行后面的函数
+
+```swift
+/// 烧水
+let boiledWaterWithBarrier = DispatchWorkItem(qos: .default, flags: .barrier) {
+    print("开始烧水: \(Thread.current)")
+    sleep(3)
+    print("水烧好啦")
+}
+
+/// 刷牙
+let brushTeethWithBarrier = DispatchWorkItem(qos: .default, flags: .barrier) {
+    print("开始刷牙:\(Thread.current)")
+    sleep(5)
+    print("牙刷完啦")
+}
+
+concurrentQueue.async(execute: boiledWaterWithBarrier)
+concurrentQueue.async(execute: brushTeethWithBarrier)
+```
+
+### 迭代
+
+DispatchQueue为我们提供了一种更加方便的方法来同时执行多个迭代次数的相同任务
+
+当我们有大量细小的重复性的工作的时候可以这么用
+
+比如我们要找到0到100000中所有能被17整除的数字：
+
+```swift
+let list = Array(0...100000)
+var result = [Int]()
+
+
+concurrentQueue.async {
+    
+    
+    DispatchQueue.concurrentPerform(iterations: list.count) { (i) in
+        if (i % 17 == 0) {
+            serialQueue.sync {
+                result.append(list[i])
+            }
+        }
+    }
+    serialQueue.sync(execute: {
+        print(result)
+    })
+}
+```
+
+
+
+## 参考
+
+- [https://developer.apple.com/documentation/dispatch](https://developer.apple.com/documentation/dispatch)
+- [https://stackoverflow.com/questions/23856230/what-is-the-difference-between-gcd-main-queue-and-the-main-thread](https://stackoverflow.com/questions/23856230/what-is-the-difference-between-gcd-main-queue-and-the-main-thread)
+- [https://developer.apple.com/documentation/dispatch/dispatchqueue/2016088-concurrentperform](https://developer.apple.com/documentation/dispatch/dispatchqueue/2016088-concurrentperform)
+- [https://juejin.im/post/5acaea17f265da239a601a01#heading-14](https://juejin.im/post/5acaea17f265da239a601a01#heading-14)
+- [https://medium.com/@vikasdalvi.29/multitasking-in-ios-using-gcd-b931885a719e](https://medium.com/@vikasdalvi.29/multitasking-in-ios-using-gcd-b931885a719e)
+
+
+
+
+
+
+
+
+
+
