@@ -2,6 +2,8 @@
 
 这篇文主要想总结下 `GCD` 在swift中的使用，[文中示例代码](https://github.com/FelixScat/demo_GCD)
 
+[ObjC版本](https://github.com/FelixScat/demo_GCD/blob/master/ObjCGCD/README.md)
+
 ## 基本概念
 
 ### 进程
